@@ -287,14 +287,19 @@ export async function POST(req: NextRequest) {
         serverUploadedAt: Date.now(),
       });
     } catch (e) {
+      // Surface the underlying Blob error directly to the client.
+      // Previously we returned a canned message that hid the actual
+      // failure mode (token permission, quota, path issue, etc.) and
+      // made debugging the upload pipeline much harder.
+      const msg = (e as Error).message || String(e);
+      const name = (e as Error).name || "Error";
       console.error(
-        `[training-set/submit] image put failed for ${entry.id}: ${
-          (e as Error).message
-        }`
+        `[training-set/submit] put failed for ${entry.id}: ${name}: ${msg}`
       );
       return NextResponse.json(
         {
-          error: `Failed to upload ${entry.id} to storage. Already-uploaded entries from this batch are present; you can re-submit the failed ones.`,
+          error: `Blob put failed for ${entry.id}: ${name}: ${msg}`,
+          underlying: { name, message: msg },
         },
         { status: 502 }
       );
@@ -340,13 +345,15 @@ export async function POST(req: NextRequest) {
       }
     );
   } catch (e) {
+    const msg = (e as Error).message || String(e);
+    const name = (e as Error).name || "Error";
     console.error(
-      `[training-set/submit] manifest put failed: ${(e as Error).message}`
+      `[training-set/submit] manifest put failed: ${name}: ${msg}`
     );
     return NextResponse.json(
       {
-        error:
-          "Images uploaded but manifest write failed. Re-submit to repair the manifest.",
+        error: `Images uploaded but manifest write failed: ${name}: ${msg}. Re-submit to repair the manifest.`,
+        underlying: { name, message: msg },
         uploadedIds: uploaded.map((e) => e.id),
       },
       { status: 502 }
