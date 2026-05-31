@@ -33,7 +33,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { put, list } from "@vercel/blob";
+import { put, get } from "@vercel/blob";
 
 const MAX_ENTRIES_PER_REQUEST = 50;
 const MAX_PROMPT_LEN = 50_000;
@@ -145,17 +145,21 @@ async function readExistingManifest(
 ): Promise<ServerManifest | null> {
   try {
     const key = `training-set/manifests/${wallet}.json`;
-    const blobs = await list({ prefix: key });
-    const match = blobs.blobs.find((b) => b.pathname === key);
-    if (!match) return null;
-    const res = await fetch(match.url, { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as ServerManifest;
+    // For private blobs, list()+fetch(url) doesn't work — the URL is a
+    // signed reference that requires the SDK to resolve. get() streams
+    // the content directly using the store's auth token.
+    const result = await get(key, { access: "private" });
+    if (!result) return null;
+    const text = await new Response(result.stream).text();
+    return JSON.parse(text) as ServerManifest;
   } catch (e) {
+    // First-upload case: the blob doesn't exist yet, get() throws a
+    // BlobNotFoundError. That's expected — return null so the caller
+    // treats it as "no existing manifest, start fresh".
+    const msg = (e as Error).message || String(e);
+    if (/not\s*found|404/i.test(msg)) return null;
     console.error(
-      `[training-set/submit] manifest read failed: ${
-        (e as Error).message
-      }`
+      `[training-set/submit] manifest read failed: ${msg}`
     );
     return null;
   }
@@ -269,9 +273,14 @@ export async function POST(req: NextRequest) {
         `training-set/images/${walletLower}/${entry.id}.png`,
         pngBuf,
         {
-          access: "public",
+          access: "private" as const,
           contentType: "image/png",
           allowOverwrite: true,
+          // Store is configured PRIVATE in the Vercel dashboard — blobs
+          // are only reachable via the SDK's get()/download() with the
+          // store's read-write token. The project owner accesses the
+          // dataset via the Vercel dashboard OR a future bulk-export
+          // script that uses the SDK directly.
         }
       );
       uploaded.push({
@@ -339,7 +348,7 @@ export async function POST(req: NextRequest) {
       `training-set/manifests/${walletLower}.json`,
       JSON.stringify(merged, null, 2),
       {
-        access: "public",
+        access: "private" as const,
         contentType: "application/json",
         allowOverwrite: true,
       }
