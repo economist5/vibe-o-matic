@@ -17,9 +17,10 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { refillCounter } from "@/lib/free-render-counter";
+import { refillCounter, setCounter } from "@/lib/free-render-counter";
 
 const MAX_REFILL_PER_CALL = 10_000;
+const MAX_SET_VALUE = 100_000;
 
 export async function POST(req: NextRequest) {
   const adminToken = process.env.VIBEIFY_ADMIN_TOKEN;
@@ -48,13 +49,52 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Two modes:
+  //   ?set=N  → override the counter to exactly N (atomic SET).
+  //             Doesn't bump refillCount. Used to correct a mistake
+  //             or to dial up/down for a marketing moment.
+  //   ?n=N    → add N to the counter (atomic INCRBY) + bump refillCount.
+  //             The default refill behavior.
+  // If both are present, ?set= wins (it's the more deliberate action).
+  const setRaw = req.nextUrl.searchParams.get("set");
+  if (setRaw !== null) {
+    const target = Number(setRaw);
+    if (!Number.isInteger(target) || target < 0 || target > MAX_SET_VALUE) {
+      return NextResponse.json(
+        {
+          error: `?set must be an integer 0..${MAX_SET_VALUE}`,
+        },
+        { status: 400 }
+      );
+    }
+    const state = await setCounter(target);
+    if (!state) {
+      return NextResponse.json(
+        {
+          error:
+            "Counter set failed — KV not provisioned or write error. Check server logs.",
+        },
+        { status: 503 }
+      );
+    }
+    console.log(
+      `[admin/refill] SET → remaining=${state.remaining} (refillCount untouched at ${state.refillCount})`
+    );
+    return NextResponse.json({
+      ok: true,
+      operation: "set",
+      remaining: state.remaining,
+      refillCount: state.refillCount,
+    });
+  }
+
   // ?n=200 — how many credits to add to the remaining counter.
   const nRaw = req.nextUrl.searchParams.get("n");
   const n = Number(nRaw);
   if (!Number.isInteger(n) || n < 1 || n > MAX_REFILL_PER_CALL) {
     return NextResponse.json(
       {
-        error: `?n must be an integer 1..${MAX_REFILL_PER_CALL}`,
+        error: `?n must be an integer 1..${MAX_REFILL_PER_CALL} (or use ?set=N to override the counter to an exact value)`,
       },
       { status: 400 }
     );
@@ -76,6 +116,7 @@ export async function POST(req: NextRequest) {
   );
   return NextResponse.json({
     ok: true,
+    operation: "add",
     added: n,
     remaining: state.remaining,
     refillCount: state.refillCount,

@@ -108,6 +108,39 @@ export async function decrementCounter(): Promise<number | null> {
 }
 
 /**
+ * Admin-only SET — overrides the remaining counter to an exact value
+ * (atomic Redis SET, not INCR). Used when refillCounter() was called
+ * by mistake, or for marketing dial-ups to a specific count. Does NOT
+ * touch the refill-count metric since it's not a refill — it's a
+ * correction.
+ *
+ * Caller is responsible for authorization. Returns the new state, or
+ * null on failure.
+ */
+export async function setCounter(
+  to: number
+): Promise<CounterState | null> {
+  const c = client();
+  if (!c) return null;
+  if (to < 0 || !Number.isInteger(to)) return null;
+  try {
+    await c.set(REMAINING_KEY, to);
+    // Refill-count is unaffected; read it back to return a complete state.
+    const refillCount = await c.get<number>(REFILL_COUNT_KEY);
+    return {
+      remaining: to,
+      refillCount: typeof refillCount === "number" ? refillCount : 0,
+    };
+  } catch (e) {
+    console.error(
+      `[free-render-counter] set failed:`,
+      (e as Error).message
+    );
+    return null;
+  }
+}
+
+/**
  * Admin-only refill. Adds `by` to the remaining counter and increments
  * the refill-count metric (so the UI can show "refilled N times this
  * month" or similar). Returns the new state, or null on failure.
