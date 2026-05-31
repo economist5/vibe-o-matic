@@ -30,8 +30,13 @@ export type TrainingEntry = {
   ts: number;
   /** Privacy floor: only GVC-token renders end up here. */
   sourceKind: "gvc-token";
-  /** Numeric GVC token id rendered (0..6968). */
-  sourceTokenId: number;
+  /**
+   * Numeric GVC token id rendered (0..6968) when the source was loaded
+   * via the token-ID picker. null when the user manually tagged an
+   * uploaded image as GVC (we don't know which token, if any, it's
+   * derived from).
+   */
+  sourceTokenId: number | null;
   /** Full prompt sent to Flux for the render — provides the caption for
    *  LoRA training when paired with the output image. */
   prompt: string;
@@ -41,6 +46,13 @@ export type TrainingEntry = {
   outputImage: string;
   /** User's verdict: up / down / not yet rated. */
   feedback: "up" | "down" | null;
+  /**
+   * Optional 1-line user reason for the verdict ("nose came back",
+   * "perfect skin tone", etc.). Trimmed to 200 chars in the UI. Saved
+   * alongside feedback verdict; uploaded to the training-set as a
+   * caption-quality signal.
+   */
+  feedbackReason?: string;
   /**
    * Unix epoch ms when this entry was successfully POSTed to the
    * training-set contribution endpoint. null = not yet contributed.
@@ -135,6 +147,29 @@ export function setEntryFeedback(
   if (idx === -1) return current;
   const next = [...current];
   next[idx] = { ...next[idx], feedback };
+  safeWrite(next);
+  return next;
+}
+
+/**
+ * Update the optional reason text on an existing entry. Trims + caps
+ * at 200 chars (the server endpoint enforces the same cap). Empty
+ * string clears the reason. Source-of-truth pattern matches
+ * setEntryFeedback above.
+ */
+export function setEntryFeedbackReason(
+  current: TrainingEntry[],
+  id: string,
+  reason: string
+): TrainingEntry[] {
+  const idx = current.findIndex((e) => e.id === id);
+  if (idx === -1) return current;
+  const trimmed = reason.trim().slice(0, 200);
+  const next = [...current];
+  next[idx] = {
+    ...next[idx],
+    feedbackReason: trimmed || undefined,
+  };
   safeWrite(next);
   return next;
 }

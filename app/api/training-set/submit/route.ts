@@ -44,11 +44,12 @@ type SubmittedEntry = {
   id: string;
   ts: number;
   sourceKind: "gvc-token";
-  sourceTokenId: number;
+  sourceTokenId: number | null;
   prompt: string;
   description?: string;
   outputImage: string;
   feedback: "up" | "down" | null;
+  feedbackReason?: string;
   uploadedAt: number | null;
 };
 
@@ -100,14 +101,15 @@ function validateEntry(e: unknown): SubmittedEntry | null {
   if (typeof o.id !== "string" || !/^r_[a-z0-9]+$/i.test(o.id)) return null;
   if (typeof o.ts !== "number" || !Number.isFinite(o.ts)) return null;
   if (o.sourceKind !== "gvc-token") return null; // PRIVACY FLOOR
-  if (
-    typeof o.sourceTokenId !== "number" ||
-    !Number.isInteger(o.sourceTokenId) ||
-    o.sourceTokenId < 0 ||
-    o.sourceTokenId > 6968
-  ) {
-    return null;
-  }
+  // sourceTokenId may be null (user manually tagged an upload as GVC
+  // without specifying a token id) OR an integer in the valid range.
+  const validTokenId =
+    o.sourceTokenId === null ||
+    (typeof o.sourceTokenId === "number" &&
+      Number.isInteger(o.sourceTokenId) &&
+      o.sourceTokenId >= 0 &&
+      o.sourceTokenId <= 6968);
+  if (!validTokenId) return null;
   if (typeof o.prompt !== "string" || o.prompt.length > MAX_PROMPT_LEN) {
     return null;
   }
@@ -126,16 +128,28 @@ function validateEntry(e: unknown): SubmittedEntry | null {
   ) {
     return null;
   }
+  // Optional 1-line reason; cap at 200 chars (matches client trim).
+  if (
+    o.feedbackReason !== undefined &&
+    (typeof o.feedbackReason !== "string" || o.feedbackReason.length > 200)
+  ) {
+    return null;
+  }
   return {
     id: o.id,
     ts: o.ts,
     sourceKind: "gvc-token",
-    sourceTokenId: o.sourceTokenId,
+    sourceTokenId:
+      typeof o.sourceTokenId === "number" ? o.sourceTokenId : null,
     prompt: o.prompt,
     description:
       typeof o.description === "string" ? o.description : undefined,
     outputImage: o.outputImage,
     feedback: o.feedback as "up" | "down" | null,
+    feedbackReason:
+      typeof o.feedbackReason === "string" && o.feedbackReason.length > 0
+        ? o.feedbackReason
+        : undefined,
     uploadedAt: typeof o.uploadedAt === "number" ? o.uploadedAt : null,
   };
 }
@@ -270,6 +284,7 @@ export async function POST(req: NextRequest) {
         prompt: entry.prompt,
         description: entry.description,
         feedback: entry.feedback,
+        feedbackReason: entry.feedbackReason,
         uploadedAt: entry.uploadedAt,
         imageUrl: blob.url,
         serverUploadedAt: Date.now(),

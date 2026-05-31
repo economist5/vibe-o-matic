@@ -20,6 +20,7 @@ import {
   pendingUploadCount,
   ratedCount as countRated,
   setEntryFeedback,
+  setEntryFeedbackReason,
   type TrainingEntry,
 } from "@/lib/training-set-local";
 import {
@@ -660,7 +661,10 @@ export default function Home() {
       // Privacy floor enforced in lib/training-set-local.ts (addEntry rejects
       // anything where sourceKind !== "gvc-token"), but we ALSO gate here so
       // we don't do the work for photo renders.
-      if (sourceKind === "gvc-token" && sourceTokenId !== null) {
+      if (sourceKind === "gvc-token") {
+        // sourceTokenId may be null if the user manually tagged an
+        // uploaded image as GVC (no specific token id known). The
+        // privacy floor + training-set entry persistence still apply.
         const entryId = `r_${rec.id}`;
         const newSet = addTrainingEntry(trainingSet, {
           id: entryId,
@@ -741,6 +745,18 @@ export default function Home() {
     if (!target) return;
     const nextVerdict = currentEntry?.feedback === verdict ? null : verdict;
     const newSet = setEntryFeedback(trainingSet, target, nextVerdict);
+    setTrainingSet(newSet);
+  }
+
+  /**
+   * Persist the optional 1-line reason for the current render's feedback
+   * (FEEDBACK-V1 — caption-quality signal beyond the binary 👍/👎).
+   * Called on blur from the input so we don't write on every keystroke.
+   */
+  function handleFeedbackReason(reason: string) {
+    const target = currentEntry?.id;
+    if (!target) return;
+    const newSet = setEntryFeedbackReason(trainingSet, target, reason);
     setTrainingSet(newSet);
   }
 
@@ -1330,7 +1346,9 @@ export default function Home() {
             {result && sourceKind === "gvc-token" && (
               <FeedbackWidget
                 currentVerdict={currentEntry?.feedback ?? null}
+                currentReason={currentEntry?.feedbackReason ?? ""}
                 onVote={handleFeedback}
+                onReason={handleFeedbackReason}
               />
             )}
             {result && sourceKind === "photo" && (
@@ -1438,6 +1456,42 @@ export default function Home() {
                   </button>
                 </div>
               )}
+
+              {/* Tag-as-GVC toggle — when checked, routes the source
+                  through the gvc-token pipeline (skip describer, inject
+                  source as Flux reference). For token-loader sources,
+                  the toggle is pre-checked + disabled (the loader path
+                  always sets sourceKind=gvc-token + a real tokenId).
+                  For uploads, toggle is user-controlled; checking it
+                  treats the upload as a canonical GVC character with
+                  no specific token id known. */}
+              {sourceUrl && (
+                <label
+                  className={`mb-3 flex items-center gap-2 text-xs font-body select-none ${
+                    sourceTokenId !== null
+                      ? "text-white/40 cursor-not-allowed"
+                      : "text-white/70 cursor-pointer"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={sourceKind === "gvc-token"}
+                    disabled={sourceTokenId !== null}
+                    onChange={(e) =>
+                      setSourceKind(e.target.checked ? "gvc-token" : "photo")
+                    }
+                    className="accent-gvc-gold"
+                  />
+                  <span>
+                    This is a GVC character{" "}
+                    <span className="text-white/30">
+                      ({sourceTokenId !== null
+                        ? "set automatically from token loader"
+                        : "skip describer, use image as a direct reference"})
+                    </span>
+                  </span>
+                </label>
+              )}
               <label className="block">
                 <span className="block text-white/50 font-body text-sm mb-2">
                   Upload
@@ -1499,6 +1553,25 @@ export default function Home() {
                     </button>
                   );
                 })}
+                {/* "Freeform" chip — clears the preset + reference
+                    backgrounds entirely. Lets users type their own
+                    scene prompt in the textarea below (or leave it
+                    blank for a generic Vibetown fallback). */}
+                <button
+                  onClick={() => {
+                    setScene("");
+                    setSceneBgImages([]);
+                    setSceneView("text");
+                  }}
+                  className={`text-sm font-body px-2 py-1 rounded-full border transition-all ${
+                    scene.trim() === "" && sceneBgImages.length === 0
+                      ? "bg-gvc-gold/15 border-gvc-gold/50 text-gvc-gold"
+                      : "bg-black/30 border-white/[0.08] text-white/60 hover:border-white/20"
+                  }`}
+                  title="Skip scene preset; type your own (or leave blank for default)"
+                >
+                  ✍️ Freeform
+                </button>
               </div>
 
               {sceneBgImages.length > 0 ? (
@@ -1896,43 +1969,86 @@ export default function Home() {
 /**
  * 👍 / 👎 feedback widget for the FEEDBACK-V1 training-set program.
  * Sticky state: shows the current verdict, clicking the same vote twice
- * clears it back to no-verdict. Only rendered for GVC-token sources —
- * the parent gates visibility based on currentEntryId !== null.
+ * clears it back to no-verdict. Once a verdict is set, an optional
+ * 1-line reason input appears for users who want to add caption-quality
+ * context ("nose came back", "perfect skin tone", etc.). Only rendered
+ * for GVC-token sources.
  */
 function FeedbackWidget({
   currentVerdict,
+  currentReason,
   onVote,
+  onReason,
 }: {
   currentVerdict: "up" | "down" | null;
+  currentReason: string;
   onVote: (verdict: "up" | "down") => void;
+  onReason: (reason: string) => void;
 }) {
+  // Local input state — only commits to the training set on blur or
+  // Enter so we don't churn the React state + localStorage on every
+  // keystroke. Synced down whenever the parent's currentReason changes
+  // (e.g. after a new render where the new entry has its own reason).
+  const [localReason, setLocalReason] = useState(currentReason);
+  useEffect(() => {
+    setLocalReason(currentReason);
+  }, [currentReason]);
+
   return (
-    <div className="mt-3 flex items-center justify-center gap-3">
-      <span className="text-xs font-body text-white/40 uppercase tracking-wider">
-        Rate this render
-      </span>
-      <button
-        onClick={() => onVote("up")}
-        aria-label="Mark this render as good"
-        className={`px-3 py-1.5 rounded-full text-base transition-all border ${
-          currentVerdict === "up"
-            ? "bg-gvc-green/20 border-gvc-green/50 shadow-[0_0_12px_rgba(46,255,46,0.15)]"
-            : "bg-black/30 border-white/[0.08] hover:border-gvc-green/40 hover:bg-gvc-green/[0.08]"
-        }`}
-      >
-        👍
-      </button>
-      <button
-        onClick={() => onVote("down")}
-        aria-label="Mark this render as off-spec"
-        className={`px-3 py-1.5 rounded-full text-base transition-all border ${
-          currentVerdict === "down"
-            ? "bg-pink-accent/20 border-pink-accent/50 shadow-[0_0_12px_rgba(255,107,157,0.15)]"
-            : "bg-black/30 border-white/[0.08] hover:border-pink-accent/40 hover:bg-pink-accent/[0.08]"
-        }`}
-      >
-        👎
-      </button>
+    <div className="mt-3 flex flex-col items-center gap-2">
+      <div className="flex items-center justify-center gap-3">
+        <span className="text-xs font-body text-white/40 uppercase tracking-wider">
+          Rate this render
+        </span>
+        <button
+          onClick={() => onVote("up")}
+          aria-label="Mark this render as good"
+          className={`px-3 py-1.5 rounded-full text-base transition-all border ${
+            currentVerdict === "up"
+              ? "bg-gvc-green/20 border-gvc-green/50 shadow-[0_0_12px_rgba(46,255,46,0.15)]"
+              : "bg-black/30 border-white/[0.08] hover:border-gvc-green/40 hover:bg-gvc-green/[0.08]"
+          }`}
+        >
+          👍
+        </button>
+        <button
+          onClick={() => onVote("down")}
+          aria-label="Mark this render as off-spec"
+          className={`px-3 py-1.5 rounded-full text-base transition-all border ${
+            currentVerdict === "down"
+              ? "bg-pink-accent/20 border-pink-accent/50 shadow-[0_0_12px_rgba(255,107,157,0.15)]"
+              : "bg-black/30 border-white/[0.08] hover:border-pink-accent/40 hover:bg-pink-accent/[0.08]"
+          }`}
+        >
+          👎
+        </button>
+      </div>
+
+      {/* Optional 1-line reason — only surfaces once a verdict is set
+          so the widget stays compact until the user has chosen to
+          engage. Saved on blur or Enter to avoid keystroke-rate writes. */}
+      {currentVerdict !== null && (
+        <input
+          type="text"
+          value={localReason}
+          onChange={(e) => setLocalReason(e.target.value.slice(0, 200))}
+          onBlur={() => onReason(localReason)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              (e.target as HTMLInputElement).blur();
+            }
+          }}
+          placeholder={
+            currentVerdict === "up"
+              ? "Optional: what worked? (e.g. perfect skin tone, hair color)"
+              : "Optional: what was off? (e.g. nose came back, scene felt flat)"
+          }
+          maxLength={200}
+          aria-label="Optional reason for your rating"
+          className="w-full max-w-md px-3 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] text-white text-sm font-body placeholder:text-white/30 focus:border-gvc-gold/40 outline-none"
+        />
+      )}
     </div>
   );
 }
