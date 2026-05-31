@@ -767,38 +767,85 @@ export default function Home() {
       toast("Nothing new to upload — every rated render is already in the dataset.");
       return;
     }
+
     setUploadingTrainingSet(true);
     const uploadToast = toast.loading(
-      `Uploading ${pending.length} render${pending.length === 1 ? "" : "s"}…`
+      `Uploading 0/${pending.length}…`
     );
-    try {
-      const res = await fetch("/api/training-set/submit", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ wallet: account, entries: pending }),
+
+    // One render per POST. Each entry can be ~500 KB-1 MB as base64
+    // PNG; sending 3+ in one body easily exceeds Vercel's 4.5 MB
+    // serverless cap and returns a plain-text 413 (which JSON.parse
+    // chokes on with "Unexpected token 'R'"). Per-entry uploads stay
+    // well under the cap and give us partial-success semantics if
+    // one fails mid-batch.
+    const succeeded: string[] = [];
+    const failures: { id: string; error: string }[] = [];
+    let runningSet = trainingSet;
+
+    for (let i = 0; i < pending.length; i++) {
+      const entry = pending[i];
+      toast.loading(`Uploading ${i + 1}/${pending.length}…`, {
+        id: uploadToast,
       });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}`);
+
+      try {
+        const res = await fetch("/api/training-set/submit", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ wallet: account, entries: [entry] }),
+        });
+
+        // Safely parse the response — 413 / 502 etc. often return
+        // plain text (Vercel's "Request Entity Too Large" page),
+        // which JSON.parse would throw on with a cryptic message.
+        let data: { error?: string; accepted?: number; totalEntries?: number; uploadedIds?: string[] } = {};
+        const text = await res.text();
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = {
+            error:
+              `HTTP ${res.status}: ${text.slice(0, 80) || res.statusText}`.trim(),
+          };
+        }
+
+        if (!res.ok) {
+          failures.push({
+            id: entry.id,
+            error: data.error || `HTTP ${res.status}`,
+          });
+        } else {
+          succeeded.push(entry.id);
+          // Mark this entry uploaded immediately so a partial failure
+          // doesn't lose the successful uploads from this batch.
+          runningSet = markUploaded(runningSet, [entry.id]);
+          setTrainingSet(runningSet);
+        }
+      } catch (e) {
+        failures.push({ id: entry.id, error: (e as Error).message });
       }
-      const uploadedIds: string[] = Array.isArray(data.uploadedIds)
-        ? data.uploadedIds
-        : pending.map((e) => e.id);
-      const newSet = markUploaded(trainingSet, uploadedIds);
-      setTrainingSet(newSet);
+    }
+
+    setUploadingTrainingSet(false);
+
+    if (failures.length === 0) {
       toast.success(
-        `Contributed ${data.accepted} render${
-          data.accepted === 1 ? "" : "s"
-        } 🙏 — total in dataset: ${data.totalEntries}`,
+        `Contributed ${succeeded.length} render${
+          succeeded.length === 1 ? "" : "s"
+        } 🙏`,
         { id: uploadToast }
       );
-    } catch (e) {
+    } else if (succeeded.length === 0) {
       toast.error(
-        `Upload failed: ${(e as Error).message}`,
+        `All ${failures.length} uploads failed. First error: ${failures[0].error}`,
         { id: uploadToast }
       );
-    } finally {
-      setUploadingTrainingSet(false);
+    } else {
+      toast.success(
+        `Uploaded ${succeeded.length}/${pending.length}. ${failures.length} failed — first error: ${failures[0].error}`,
+        { id: uploadToast }
+      );
     }
   }
 
@@ -1693,40 +1740,19 @@ export default function Home() {
           </motion.aside>
         </div>
 
-        {/* ── Agent API — full-width CTA for autonomous integrations ─── */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.22 }}
-          className="mt-6"
-        >
-          <AgentEndpointCard />
-        </motion.section>
-
-        {/* ── Stats — single full-width card matching Agent API's width ─ */}
-        <motion.section
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.25 }}
-          className="mt-4"
-        >
-          <div className="rounded-2xl bg-gvc-dark border border-white/[0.08] p-5 grid grid-cols-2 gap-6">
-            <Stat inline label="Total renders" value={totalGens} />
-            <Stat inline label="Last render" valueText={lastGenAgo} />
-          </div>
-        </motion.section>
-
         {/* ── Phase 1b/1c: training contributions panel ──────
-            Appears as soon as the user has rendered 1+ GVC-token. Was
-            previously gated on 3+ rated entries — dropped that
-            threshold so the upload affordance is visible immediately
-            after the first rating, per user feedback. */}
+            Sits ABOVE the Agent API panel so users who just rendered
+            see their accumulated contributions and the upload
+            affordance before scrolling past to the agent-developer
+            content. Appears as soon as the user has rendered 1+
+            GVC-token (dropped from the spec's original 3+ rated
+            threshold per user feedback). */}
         {trainingSet.length >= 1 && (
           <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.3 }}
-            className="mt-4"
+            transition={{ delay: 0.2 }}
+            className="mt-6"
           >
             <ContributionsPanel
               entries={trainingSet}
@@ -1752,6 +1778,29 @@ export default function Home() {
             />
           </motion.section>
         )}
+
+        {/* ── Agent API — full-width CTA for autonomous integrations ─── */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.22 }}
+          className={trainingSet.length >= 1 ? "mt-4" : "mt-6"}
+        >
+          <AgentEndpointCard />
+        </motion.section>
+
+        {/* ── Stats — single full-width card matching Agent API's width ─ */}
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+          className="mt-4"
+        >
+          <div className="rounded-2xl bg-gvc-dark border border-white/[0.08] p-5 grid grid-cols-2 gap-6">
+            <Stat inline label="Total renders" value={totalGens} />
+            <Stat inline label="Last render" valueText={lastGenAgo} />
+          </div>
+        </motion.section>
 
         {/* ── History ────────────────────────────────────── */}
         {history.length > 0 && (
