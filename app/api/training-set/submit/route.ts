@@ -161,6 +161,27 @@ async function readExistingManifest(
   }
 }
 
+/**
+ * Diagnostic GET — read-only check of which Blob-related env vars are
+ * visible to the server runtime. Returns ONLY existence flags + token
+ * lengths, NEVER the actual token values. Lets us debug Blob env-var
+ * detection without exposing secrets in the response.
+ *
+ * Public route, no auth. Output is non-sensitive.
+ */
+export function GET() {
+  const blobVarNames = Object.keys(process.env).filter((k) =>
+    /BLOB/i.test(k)
+  );
+  const hasDefault = !!process.env.BLOB_READ_WRITE_TOKEN;
+  return NextResponse.json({
+    available: hasDefault,
+    defaultTokenLength: process.env.BLOB_READ_WRITE_TOKEN?.length ?? 0,
+    blobEnvVarsVisible: blobVarNames,
+    deployedAt: new Date().toISOString(),
+  });
+}
+
 export async function POST(req: NextRequest) {
   if (!process.env.BLOB_READ_WRITE_TOKEN) {
     return NextResponse.json(
