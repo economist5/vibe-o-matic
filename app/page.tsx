@@ -662,7 +662,7 @@ export default function Home() {
       // we don't do the work for photo renders.
       if (sourceKind === "gvc-token" && sourceTokenId !== null) {
         const entryId = `r_${rec.id}`;
-        const newSet = addTrainingEntry({
+        const newSet = addTrainingEntry(trainingSet, {
           id: entryId,
           ts: rec.ts,
           sourceKind: "gvc-token",
@@ -740,7 +740,7 @@ export default function Home() {
     const target = currentEntry?.id;
     if (!target) return;
     const nextVerdict = currentEntry?.feedback === verdict ? null : verdict;
-    const newSet = setEntryFeedback(target, nextVerdict);
+    const newSet = setEntryFeedback(trainingSet, target, nextVerdict);
     setTrainingSet(newSet);
   }
 
@@ -784,7 +784,7 @@ export default function Home() {
       const uploadedIds: string[] = Array.isArray(data.uploadedIds)
         ? data.uploadedIds
         : pending.map((e) => e.id);
-      const newSet = markUploaded(uploadedIds);
+      const newSet = markUploaded(trainingSet, uploadedIds);
       setTrainingSet(newSet);
       toast.success(
         `Contributed ${data.accepted} render${
@@ -1716,11 +1716,12 @@ export default function Home() {
           </div>
         </motion.section>
 
-        {/* ── Phase 1b: training contributions panel ─────────
-            Appears once the user has rated 3+ GVC-token renders.
-            Shows their count, thumbnail strip, and a forward-looking
-            note about the (Phase 1c) voluntary upload button. */}
-        {countRated(trainingSet) >= 3 && (
+        {/* ── Phase 1b/1c: training contributions panel ──────
+            Appears as soon as the user has rendered 1+ GVC-token. Was
+            previously gated on 3+ rated entries — dropped that
+            threshold so the upload affordance is visible immediately
+            after the first rating, per user feedback. */}
+        {trainingSet.length >= 1 && (
           <motion.section
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}

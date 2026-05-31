@@ -96,10 +96,17 @@ export function loadTrainingSet(): TrainingEntry[] {
 /**
  * Add a new entry. Returns the updated set. Rejects non-gvc-token
  * entries — the privacy-floor enforcement point.
+ *
+ * Takes `current` as the React-state source of truth so a stale or
+ * failed localStorage write never corrupts the live UI state. Writes
+ * to localStorage as best-effort (silent no-op on quota); the returned
+ * set is always correct regardless of localStorage success.
  */
-export function addEntry(entry: TrainingEntry): TrainingEntry[] {
-  if (entry.sourceKind !== "gvc-token") return safeRead();
-  const current = safeRead();
+export function addEntry(
+  current: TrainingEntry[],
+  entry: TrainingEntry
+): TrainingEntry[] {
+  if (entry.sourceKind !== "gvc-token") return current;
   // Newest at front; cap at MAX_ENTRIES with FIFO eviction.
   const next = [entry, ...current.filter((e) => e.id !== entry.id)].slice(
     0,
@@ -111,14 +118,19 @@ export function addEntry(entry: TrainingEntry): TrainingEntry[] {
 
 /**
  * Update the feedback verdict for an existing entry. If no entry with
- * `id` exists (e.g. it was evicted, or never added in the first place
- * because the render was a photo), this is a no-op.
+ * `id` exists in the passed-in set, no-ops.
+ *
+ * Source of truth is the passed-in `current` set (i.e. React state),
+ * NOT localStorage. This prevents a class of bugs where a silently-
+ * failed localStorage write (quota exceeded etc.) makes subsequent
+ * read-modify-write operations divergent from live UI state — the
+ * exact bug that caused render-2+ ratings to fail to stick.
  */
 export function setEntryFeedback(
+  current: TrainingEntry[],
   id: string,
   feedback: "up" | "down" | null
 ): TrainingEntry[] {
-  const current = safeRead();
   const idx = current.findIndex((e) => e.id === id);
   if (idx === -1) return current;
   const next = [...current];
@@ -130,14 +142,18 @@ export function setEntryFeedback(
 /**
  * Mark all entries with the given ids as uploaded (sets uploadedAt to
  * `now`). Returns the updated set. Used by the Phase 1c contribution
- * flow once /api/training-set/submit returns success — prevents the
- * user from being prompted to re-upload entries they already submitted.
+ * flow once /api/training-set/submit returns success.
+ *
+ * Same React-state-as-source-of-truth pattern as setEntryFeedback.
  */
-export function markUploaded(ids: string[]): TrainingEntry[] {
-  if (!ids.length) return safeRead();
+export function markUploaded(
+  current: TrainingEntry[],
+  ids: string[]
+): TrainingEntry[] {
+  if (!ids.length) return current;
   const lookup = new Set(ids);
   const now = Date.now();
-  const next = safeRead().map((e) =>
+  const next = current.map((e) =>
     lookup.has(e.id) ? { ...e, uploadedAt: now } : e
   );
   safeWrite(next);
