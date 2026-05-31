@@ -84,6 +84,9 @@ nothing.
 | `CDP_API_KEY_ID` | (set) | Coinbase CDP API key id — required for the x402 USDC facilitator to verify/settle on Base mainnet |
 | `CDP_API_KEY_SECRET` | (set) | Coinbase CDP API key secret — paired with the id above |
 | `VIBEIFY_BYPASS_PASSWORD` | **required for test mode** | Server-validated password for free-render bypass. If unset, every bypass request returns 403 (test mode is fully disabled). Password lives ONLY in this env var — never in source. Rotate at will. |
+| `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) | (auto-injected by Vercel) | Upstash Redis (via the Vercel Storage marketplace). Backs the 200-render community-free counter. Auto-injected when the Upstash Redis store is connected to the project. Either env-var naming scheme is detected. If absent, the community-free path returns 503 ("not yet available"); paid + test paths unaffected. |
+| `BLOB_READ_WRITE_TOKEN` | (auto-injected by Vercel) | Vercel Blob storage token. Backs the voluntary training-set contribution endpoint. Auto-injected when the Blob store is connected. If absent, `/api/training-set/submit` returns 503; the rest of the program (counter, eligibility, render) keeps working. Store is configured PRIVATE — only authenticated SDK calls can read the dataset. |
+| `VIBEIFY_ADMIN_TOKEN` | **required for the X-reload loop** | Server-validated secret for `POST /api/admin/refill?n=200&token=…`. Used by the project owner (or whoever holds the key post-handoff) to top up the community-free counter after the public ping mechanic surfaces on X. Pick any random ≥32-char string; rotate by changing in Vercel and redeploying. If unset, the admin endpoint returns 503; counter stays at whatever it is + has to be edited in the dashboard manually. |
 
 ### How to provision the CDP keys
 
@@ -103,6 +106,29 @@ the USDC rail using JWTs signed with the CDP keys above; the VIBESTR
 route only verifies user-signed transactions on Ethereum mainnet via a
 public RPC.
 
+### How to provision Vercel KV (Upstash Redis) + Blob
+
+The community-feedback program (FEEDBACK-V1.md) needs both. Both are
+in Vercel's Storage marketplace.
+
+**Upstash Redis (counter):**
+1. Vercel dashboard → vibe-o-matic project → **Storage** → **Upstash** (the row with the chevron)
+2. Pick the **Redis** product
+3. Free tier (10k commands/day; we use ~400/cycle)
+4. Connect to project → vibe-o-matic
+5. Auto-injects `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + token; the route reads whichever)
+6. Seed the counter once: `curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?n=200&token=<VIBEIFY_ADMIN_TOKEN>"`
+
+**Vercel Blob (training dataset):**
+1. Vercel dashboard → vibe-o-matic project → **Storage** → **Blob** → **Create**
+2. Name: `vibeify-training-set` (or whatever)
+3. Access: **PRIVATE** (correct privacy posture — dataset should not be publicly enumerable)
+4. Connect to project → vibe-o-matic
+5. Auto-injects `BLOB_READ_WRITE_TOKEN`
+6. Trigger a redeploy (Vercel doesn't auto-redeploy on storage connect)
+
+Verify both: `curl https://vibe-o-matic.vercel.app/api/free-renders/remaining` should return `{available: true, remaining: N, refillCount: M}`. Browse the dataset via Vercel dashboard → Storage → Blob → browse for `training-set/`.
+
 ---
 
 ## 🩺 Production health checks
@@ -113,6 +139,14 @@ public RPC.
 # Homepage + x402 discovery should both 200
 curl -fsS -o /dev/null -w "homepage:    %{http_code}\n" https://vibe-o-matic.vercel.app/
 curl -fsS -w "\n" https://vibe-o-matic.vercel.app/api/vibeify/x402 | head -c 200
+
+# Community-feedback program endpoints
+curl -fsS https://vibe-o-matic.vercel.app/api/free-renders/remaining
+# → {"available":true,"remaining":<n>,"refillCount":<m>}
+# (or {"available":false} if Upstash Redis isn't provisioned/connected)
+
+curl -fsS "https://vibe-o-matic.vercel.app/api/community/eligibility?wallet=0x16d4f4eEB5c9C944A2359342D5E586B23051E3cd"
+# → known holder; should return isMember:true, qualifier:"gvc-nft"
 ```
 
 Expected discovery body:

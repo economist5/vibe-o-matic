@@ -83,6 +83,9 @@ After those swaps, the production deploy is fully yours: every dollar of every r
 | `CDP_API_KEY_ID` | `@coinbase/x402` SDK in `app/api/vibeify/x402/route.ts` | Coinbase CDP facilitator | Yes — see provisioning steps below | JWT-signed; 1,000 free txs/month |
 | `CDP_API_KEY_SECRET` | Same | Same | Yes | Paired with above |
 | `VIBEIFY_BYPASS_PASSWORD` | `app/api/vibeify/route.ts:130` | None (server-side string match) | Yes — pick any value, set in Vercel | UNSET → test mode entirely disabled (every bypass → 403) |
+| `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) | `lib/free-render-counter.ts` (atomic counter) | Upstash Redis (Vercel Storage marketplace) | Auto-injected on store connect | Backs the 200-render community-free counter. Either naming scheme works. Free tier covers our volume. UNSET → community-free path returns 503; paid + test paths unaffected. |
+| `BLOB_READ_WRITE_TOKEN` | `app/api/training-set/submit/route.ts` | Vercel Blob | Auto-injected on store connect | Training-dataset storage. Store configured PRIVATE (correct privacy posture). UNSET → contribution upload returns 503; render flow keeps working. |
+| `VIBEIFY_ADMIN_TOKEN` | `app/api/admin/refill/route.ts` | None (server-side string match) | Yes — pick any random ≥32-char string | Gates the counter-refill endpoint. Used by whoever holds the keys to top up the community-free pool when the X-reload ping mechanic surfaces. UNSET → admin endpoint returns 503; counter still works but can only be edited via Vercel KV dashboard. |
 
 ### Wallets
 
@@ -110,6 +113,32 @@ After those swaps, the production deploy is fully yours: every dollar of every r
 | Vibeify access predicate | `0xd8C7646AEEA84a6908D5fc310AEE72DE69FA003A` (Base) | Stateless permissive contract — no admin functions; can be swapped via the registry's `setAccessPredicate(39, newAddr)` from the treasury |
 
 Listing-maintenance procedures (how to update the manifest, swap predicates, deregister) live in [`FUTURE.md`](./FUTURE.md#-erc-8257-tool-registry-listing--shipped-toolid-39).
+
+### Storage services (Vercel-managed)
+
+| What | Vercel Storage product | What's stored | Access |
+|---|---|---|---|
+| Community-free counter | Upstash Redis (via Vercel marketplace) | One integer key (`vibeify:free-renders:remaining`) + one counter for refills | Read-write via `KV_REST_API_TOKEN`. Free tier covers our volume. Recreate by clicking through Vercel → Storage → Upstash → Redis → connect to project. |
+| Training-set contributions | Vercel Blob (private) | Per-wallet folders under `training-set/images/{wallet}/` (PNGs) + `training-set/manifests/{wallet}.json` (metadata). See [`FEEDBACK-V1.md`](./FEEDBACK-V1.md) for shape. | Private store; reads need `BLOB_READ_WRITE_TOKEN` via the SDK OR Vercel dashboard authenticated access. Public URLs do not work. |
+
+### Counter refill (admin procedure)
+
+When the public ping mechanic surfaces ("Hey @economist refill?"), top up the counter with:
+
+```bash
+curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?n=200&token=<VIBEIFY_ADMIN_TOKEN>"
+# → {"ok":true,"added":200,"remaining":<new>,"refillCount":<incremented>}
+```
+
+Adjust `n` if you want to refill by a different amount. Cap per call is 10,000 as a sanity guard.
+
+### Training-dataset access (project-owner procedure)
+
+Three ways to read the contributed training set:
+
+1. **Vercel dashboard** — Storage → Blob → browse. Click into any blob to view (PNGs render; JSON manifests open as text).
+2. **Vercel CLI** — `vercel blob list --prefix=training-set/` (requires being logged into the project)
+3. **Bulk-export script** (planned, not yet shipped — see [`LORA-PIPELINE.md`](./LORA-PIPELINE.md) for the design): `npm run export-training-set --since 2026-05-01 --thumbs-up-only` to bundle into the format Replicate/fal.ai's LoRA trainer expects.
 
 ### Hosting & code
 

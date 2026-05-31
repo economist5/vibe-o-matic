@@ -10,6 +10,15 @@ Stewardship of the project transfers to the GVC team post-hackathon (see [`WIRIN
 
 **The biggest single-step quality upgrade available to this project is replacing reference-image-driven style guidance with a Low-Rank Adaptation (LoRA) model trained directly on GVC characters.**
 
+> **Update (post-shipping):** the dataset collection pipeline that
+> feeds a LoRA training run is now LIVE. See [`FEEDBACK-V1.md`](./FEEDBACK-V1.md)
+> (community-side: holders render free + rate + voluntarily upload) and
+> [`LORA-PIPELINE.md`](./LORA-PIPELINE.md) (training-side: how the
+> collected data turns into a deployable LoRA). Two paths to a
+> production LoRA now exist — (a) GVC team provides a LoRA they
+> already have; (b) self-train one from the community-contributed
+> dataset. Both are documented; pick whichever lands first.
+
 ### Why this matters
 
 The hackathon build coerces a general-purpose image model (Flux.2 [PRO]) into producing GVC-style figurines through a heavily engineered, ~200-line text prompt and seven reference images per call. It works — but the model is always *fighting its priors* to render the canonical Vibetown look:

@@ -3,9 +3,19 @@
 Operational plan for opening the human UI free to the GVC community in
 exchange for opt-in feedback data that becomes a LoRA training set.
 
-This doc captures the v1 design + design decisions. Implementation
-happens in three phases, each with its own approval gate. NO code lands
-without an explicit go-ahead per phase.
+> **Status: ✅ All three phases shipped + live in production.**
+> - Phase 1a (eligibility + counter + X-reload): commit `52ea6d8`
+> - Phase 1b (feedback widget + browser-local training set): commit `bce436c`
+> - Phase 1c (voluntary contribution upload to Vercel Blob): commit `333cf06`
+>
+> Operational state captured in [`LAUNCH.md`](./LAUNCH.md) (env vars +
+> smoke tests) and [`WIRING.md`](./WIRING.md) (storage handoff). The
+> downstream LoRA-training pipeline lives in [`LORA-PIPELINE.md`](./LORA-PIPELINE.md).
+
+This doc captures the v1 design + design decisions that motivated the
+shipped behaviour. Each phase below is annotated with the commit it
+landed in. Future spec changes start by editing the relevant section
+here, then propagating to the implementation.
 
 ---
 
@@ -191,7 +201,7 @@ only decrements when the community-member path is actively used.
 Each phase ships as a single approval-gated commit + push. Vercel
 deploys, we verify, move on.
 
-### Phase 1a — Eligibility + counter (~3h)
+### Phase 1a — Eligibility + counter ✅ shipped (commit `52ea6d8`)
 - Add `getGvcNftBalance()` to `lib/wallet.ts` (mirror of `getVibestrBalance`)
 - Add `lib/community-eligibility.ts` with cache + dual-condition check
 - Set up Vercel KV (one-time dashboard config + env vars)
@@ -201,13 +211,13 @@ deploys, we verify, move on.
 - Server: bypass x402 step when `isMember && remaining > 0`; decrement
   counter on success
 
-### Phase 1b — Feedback widget + localStorage (~2h)
+### Phase 1b — Feedback widget + localStorage ✅ shipped (commit `bce436c`)
 - 👍/👎 buttons under each render
 - localStorage persistence layer with the schema above
 - "Your contributions" panel surface
 - All UI; no server changes
 
-### Phase 1c — Voluntary contribution endpoint (~2h)
+### Phase 1c — Voluntary contribution endpoint ✅ shipped (commit `333cf06`)
 - `POST /api/training-set/submit` (no wallet sig)
 - Vercel Blob writes (manifest + images)
 - Toast confirmation on successful upload

@@ -17,6 +17,8 @@ This repo ships with five docs, each scoped to one audience. Pick the one that m
 | Run / operate the production deploy (env vars, smoke tests, rollback) | [**LAUNCH.md**](./LAUNCH.md) — live-ops reference |
 | Take over ownership of the project (GVC team handoff) | [**WIRING.md**](./WIRING.md) — per-dependency take-over checklist |
 | Understand the post-hackathon roadmap (LoRA, VIBESTR rail activation) | [**FUTURE.md**](./FUTURE.md) — roadmap + due-diligence checklist |
+| Understand the live community-feedback program (free renders + LoRA dataset) | [**FEEDBACK-V1.md**](./FEEDBACK-V1.md) — spec + operational state |
+| Understand the planned LoRA training pipeline | [**LORA-PIPELINE.md**](./LORA-PIPELINE.md) — dataset → training → deployment |
 
 ---
 
