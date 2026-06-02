@@ -86,7 +86,7 @@ nothing.
 | `VIBEIFY_BYPASS_PASSWORD` | **required for test mode** | Server-validated password for free-render bypass. If unset, every bypass request returns 403 (test mode is fully disabled). Password lives ONLY in this env var — never in source. Rotate at will. |
 | `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) | (auto-injected by Vercel) | Upstash Redis (via the Vercel Storage marketplace). Backs the 200-render community-free counter. Auto-injected when the Upstash Redis store is connected to the project. Either env-var naming scheme is detected. If absent, the community-free path returns 503 ("not yet available"); paid + test paths unaffected. |
 | `BLOB_READ_WRITE_TOKEN` | (auto-injected by Vercel) | Vercel Blob storage token. Backs the voluntary training-set contribution endpoint. Auto-injected when the Blob store is connected. If absent, `/api/training-set/submit` returns 503; the rest of the program (counter, eligibility, render) keeps working. Store is configured PRIVATE — only authenticated SDK calls can read the dataset. |
-| `VIBEIFY_ADMIN_TOKEN` | **required for the X-reload loop** | Server-validated secret for `POST /api/admin/refill?n=200&token=…`. Used by the project owner (or whoever holds the key post-handoff) to top up the community-free counter after the public ping mechanic surfaces on X. Pick any random ≥32-char string; rotate by changing in Vercel and redeploying. If unset, the admin endpoint returns 503; counter stays at whatever it is + has to be edited in the dashboard manually. |
+| `VIBEIFY_ADMIN_TOKEN` | **required for the X-reload loop** | Server-validated secret for `POST /api/admin/refill?token=…` (two modes: `?n=N` adds, `?set=N` overrides to exact value — see [WIRING.md](./WIRING.md#counter-refill-admin-procedure)). Used by the project owner (or whoever holds the key post-handoff) to top up the community-free counter after the public ping mechanic surfaces on X. Pick any random ≥32-char string; rotate by changing in Vercel and redeploying. If unset, the admin endpoint returns 503; counter stays at whatever it is + has to be edited in the dashboard manually. |
 
 ### How to provision the CDP keys
 
@@ -117,7 +117,7 @@ in Vercel's Storage marketplace.
 3. Free tier (10k commands/day; we use ~400/cycle)
 4. Connect to project → vibe-o-matic
 5. Auto-injects `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + token; the route reads whichever)
-6. Seed the counter once: `curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?n=200&token=<VIBEIFY_ADMIN_TOKEN>"`
+6. Seed the counter once: `curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?set=200&token=<VIBEIFY_ADMIN_TOKEN>"` (use `?set=N` for the initial seed — atomic SET, doesn't bump refillCount. Subsequent top-ups use `?n=N`.)
 
 **Vercel Blob (training dataset):**
 1. Vercel dashboard → vibe-o-matic project → **Storage** → **Blob** → **Create**

@@ -7,6 +7,9 @@ exchange for opt-in feedback data that becomes a LoRA training set.
 > - Phase 1a (eligibility + counter + X-reload): commit `52ea6d8`
 > - Phase 1b (feedback widget + browser-local training set): commit `bce436c`
 > - Phase 1c (voluntary contribution upload to Vercel Blob): commit `333cf06`
+> - Phase 1d (post-launch tweaks from early testers): commit `1647814`
+>   — tag-as-GVC checkbox on uploads, "Freeform" scene chip, optional
+>   1-line feedback reason
 >
 > Operational state captured in [`LAUNCH.md`](./LAUNCH.md) (env vars +
 > smoke tests) and [`WIRING.md`](./WIRING.md) (storage handoff). The
@@ -72,9 +75,11 @@ Vibe-ify CTA: `"178 / 200 free community renders left"`.
     - Show the X-reload button (see next section)
     - The $0.69 USDC paid flow remains available — eligible community
       members can still pay if they want.
-- **Refill mechanism**: `POST /api/admin/refill?n=200` gated by the
-  `VIBEIFY_ADMIN_TOKEN` env var. Increments the counter by N. Used by
-  the original author manually when they decide to top up.
+- **Refill mechanism**: `POST /api/admin/refill` gated by the
+  `VIBEIFY_ADMIN_TOKEN` env var. Two modes:
+    - `?n=N` → adds N to the counter (atomic `INCRBY`) + bumps `refillCount`. The normal refill action.
+    - `?set=N` → overrides the counter to exactly N (atomic `SET`) without touching `refillCount`. For corrections (e.g. a double-refill mistake) or marketing dial-ups to an exact number.
+  Used by the original author manually when they decide to top up or correct.
 - **Per-wallet quota**: NONE. A single GVC holder could theoretically
   consume all 200 if they wanted to. The 200 total is the bound.
 
@@ -108,7 +113,14 @@ path), two micro-buttons appear under the result:
 
 - **Choice is sticky** — once clicked, the buttons swap to a confirmed
   state showing the rating; can be changed by clicking again
-- **No text input** — minimal-friction design per the v1 spec
+- **Optional 1-line reason** — once a verdict is set, a small text
+  input surfaces below the buttons. Users can optionally type a
+  short reason ("nose came back", "perfect skin tone", "scene too
+  busy") — trimmed + capped at 200 chars in the UI, mirrored by
+  server-side validation on upload. Used downstream as a quality
+  signal during dataset curation (see LORA-PIPELINE.md). Added in
+  Phase 1d after early testers asked for a way to surface *why* a
+  render fell flat.
 - **Stored in browser `localStorage`** under key
   `vibe-o-matic:training-set` (NEVER auto-sent to a server)
 
@@ -121,23 +133,52 @@ to the training set.** Photo-source renders show the feedback widget for
 UX symmetry, but their data never enters local storage or the upload
 path. NFT art is public on-chain; user photos contain identity.
 
+### Tag-as-GVC (Phase 1d — opt-in upload bypass)
+
+After Phase 1c shipped, early testers asked for a way to contribute
+renders made from uploaded images they *know* depict a GVC token (e.g.
+a screenshot of one). Per privacy floor, those would otherwise stay
+strictly browser-local.
+
+Phase 1d added a **"This is a GVC NFT" checkbox** in the upload panel
+when the source is a user upload. Mechanics:
+
+- For sources loaded via the GVC token ID picker: checkbox is
+  pre-checked + disabled (sourceKind is unambiguously `"gvc-token"`,
+  `sourceTokenId` known).
+- For user uploads: checkbox is unchecked by default, user-controlled.
+  Checking it sets `sourceKind = "gvc-token"` with
+  `sourceTokenId = null` on the resulting entry — voluntary opt-in to
+  the training-set persistence + upload path.
+
+The privacy floor still holds (only sourceKind === "gvc-token" entries
+persist) — Phase 1d just adds a user-driven on-ramp for "I know this
+*is* GVC, please count it." A photo of a person remains photo-source
+no matter what; the user just doesn't have any reason to tick the box.
+
 ### Per-render localStorage entry
 
 ```ts
 {
   id: "r_abc123",
   ts: 1716966200,
-  sourceKind: "gvc-token",
-  sourceTokenId: 5618,           // the GVC token ID rendered
-  prompt: "...",                  // full Flux prompt
-  outputImage: "data:image/...",  // the rendered PNG as data URL
-  feedback: "up" | "down" | null,
+  sourceKind: "gvc-token",         // only kind that ever lands here
+  sourceTokenId: 5618 | null,      // number when loaded by token ID;
+                                   // null when user tagged an upload as GVC
+  prompt: "...",                   // full Flux prompt
+  description: "",                 // empty for gvc-token path (no describer)
+  outputImage: "data:image/...",   // the rendered PNG as data URL
+  feedback: "up" | "down" | null,  // user verdict
+  feedbackReason?: string,         // optional 1-line reason, ≤200 chars
+  uploadedAt: number | null,       // unix ms when POSTed to server; null = not yet
 }
 ```
 
 Browser `localStorage` is the source of truth for everything until the
 user voluntarily uploads. They can rate at their leisure; nothing leaks
-to a server until they click submit.
+to a server until they click submit. The `uploadedAt` field lets the
+ContributionsPanel show "X new entries to upload" so users don't waste
+bandwidth re-uploading already-contributed data.
 
 ### Voluntary contribution endpoint
 
@@ -219,9 +260,32 @@ deploys, we verify, move on.
 
 ### Phase 1c — Voluntary contribution endpoint ✅ shipped (commit `333cf06`)
 - `POST /api/training-set/submit` (no wallet sig)
-- Vercel Blob writes (manifest + images)
+- Vercel Blob writes (manifest + images), `access: "private"`
+- Per-entry upload loop (avoids Vercel's 4.5 MB body cap) — partial
+  success accounting in the response
 - Toast confirmation on successful upload
 - One end-to-end smoke test before announcing the program
+
+### Phase 1d — Post-launch tweaks from early testers ✅ shipped (commit `1647814`)
+Three small but meaningful adds after the first 24h of community use:
+- **Tag-as-GVC checkbox** in the upload panel — opt-in path for users
+  contributing renders made from images they confirm depict GVC tokens
+  (sets `sourceTokenId = null`, but `sourceKind = "gvc-token"`)
+- **"✍️ Freeform" chip** in the scene panel — clears the scene + scene
+  bg images so the user can write any scene description in free text
+  (a "no preset" escape hatch)
+- **Optional 1-line feedback reason** — text input that surfaces after
+  👍/👎 verdict is set; trimmed + capped at 200 chars; surfaces as a
+  caption-quality signal during LoRA curation
+
+Plus a fix backlog from Phase 1c testing (commits `9c97453`, `41c93cb`,
+`114661c`):
+- React-state-as-source-of-truth pattern in `lib/training-set-local.ts`
+  (fixed the ratings-don't-stick-after-the-first bug under localStorage
+  quota pressure)
+- Per-entry upload (no more 413) + ContributionsPanel relocated above
+  the Agent API panel
+- Blob `access: "private"` (matches store config)
 
 ### Phase 2+ (future, not in this spec)
 - Bulk export script

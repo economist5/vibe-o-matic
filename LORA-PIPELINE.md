@@ -74,25 +74,47 @@ Per-entry shape inside the manifest:
   "id": "r_abc123",
   "ts": 1716966200,
   "sourceKind": "gvc-token",          // privacy floor — only NFT renders
-  "sourceTokenId": 5618,              // which GVC NFT this rendered from
+  "sourceTokenId": 5618,              // number when loaded by token ID;
+                                      // null when user tagged an upload as GVC (Phase 1d)
   "prompt": "...",                    // the full prompt sent to Flux
-  "description": "(gvc-token source — see SOURCE-CHARACTER reference)",
-  "feedback": "up" | "down" | null,   // user verdict
-  "uploadedAt": 1716968400,           // when the user clicked Upload
+  "description": "",                  // empty for gvc-token path (no describer ran)
+  "feedback": "up" | "down" | null,   // user verdict (👍/👎)
+  "feedbackReason": "nose came back", // OPTIONAL 1-line reason (Phase 1d), ≤200 chars; undefined if user didn't provide one
+  "uploadedAt": 1716968400,           // when the user clicked Upload (browser side)
   "imageUrl": "https://.../r_abc123.png",
   "serverUploadedAt": 1716968402
 }
 ```
 
-Quality signal: **user-supplied 👍/👎**. The Phase 1c client only
-includes entries with non-null feedback in each upload batch, so the
-manifest already filters to "user actively rated this" — every entry
-in `training-set/manifests/{wallet}.json` is a deliberate verdict, not
-a passive accumulation.
+Quality signals to use during curation:
+
+1. **User verdict (`feedback`).** The Phase 1c client only includes
+   entries with non-null feedback in each upload batch, so the
+   manifest already filters to "user actively rated this." Every entry
+   is a deliberate verdict.
+2. **Reason text (`feedbackReason`).** When present, this is the most
+   valuable curation signal — users typed it specifically because
+   something was good or off. Common patterns:
+   - 👎 + "nose came back" → strong negative example, prioritize for
+     the LoRA's "no nose" defense
+   - 👍 + "perfect skin tone" → flag as gold for the LoRA's color
+     calibration
+   - 👍/👎 with no reason → background signal, used for verdict-only
+     filtering
+3. **Source token diversity (`sourceTokenId`).** Want broad GVC trait
+   coverage — track which trait combinations are over- or under-
+   represented in upvoted entries. `sourceTokenId: null` entries
+   (Phase 1d user-tagged uploads) are still usable but lack the
+   metadata cross-reference; weight them slightly lower in the
+   curation pass.
 
 **Privacy floor**: only `sourceKind === "gvc-token"` entries are
 persisted. Photo uploads never leave the user's browser. GVC NFTs are
 public on-chain art — using them as training material is privacy-clean.
+Phase 1d added an opt-in "tag this upload as GVC" checkbox; users
+voluntarily ticking it accept persistence of that render. Their `null`
+`sourceTokenId` is the marker that this was opt-in rather than picker-
+loaded.
 
 ---
 

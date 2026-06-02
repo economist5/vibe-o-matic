@@ -8,7 +8,7 @@ Live deploy: **https://vibe-o-matic.vercel.app**
 
 ## Start here
 
-This repo ships with five docs, each scoped to one audience. Pick the one that matches what you're trying to do:
+This repo ships with seven docs, each scoped to one audience. Pick the one that matches what you're trying to do:
 
 | You want to… | Read |
 |---|---|

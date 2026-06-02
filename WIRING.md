@@ -123,14 +123,22 @@ Listing-maintenance procedures (how to update the manifest, swap predicates, der
 
 ### Counter refill (admin procedure)
 
-When the public ping mechanic surfaces ("Hey @economist refill?"), top up the counter with:
+When the public ping mechanic surfaces ("Hey @economist refill?"), top up the counter with one of two modes:
 
 ```bash
+# Mode A — add N to the current counter (atomic INCRBY) + bump refillCount.
+# The normal "top-up" action. Cap per call: 10,000.
 curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?n=200&token=<VIBEIFY_ADMIN_TOKEN>"
-# → {"ok":true,"added":200,"remaining":<new>,"refillCount":<incremented>}
+# → {"ok":true,"operation":"add","added":200,"remaining":<new>,"refillCount":<incremented>}
+
+# Mode B — override the counter to EXACTLY N (atomic SET), does NOT touch refillCount.
+# Use for: correcting a double-refill mistake, dialing up/down to an exact number
+# for a marketing moment, or seeding from scratch. Cap: 100,000.
+curl -X POST "https://vibe-o-matic.vercel.app/api/admin/refill?set=200&token=<VIBEIFY_ADMIN_TOKEN>"
+# → {"ok":true,"operation":"set","remaining":200,"refillCount":<unchanged>}
 ```
 
-Adjust `n` if you want to refill by a different amount. Cap per call is 10,000 as a sanity guard.
+If both `?n=` and `?set=` are present, `?set=` wins (it's the more deliberate action).
 
 ### Training-dataset access (project-owner procedure)
 
