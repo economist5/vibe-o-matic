@@ -126,9 +126,9 @@ ${sceneBgFilenames.map((n) => `  - ${n}`).join("\n")}
   }
 
 WHAT TO PRESERVE FROM THE SOURCE
-- Exact body / skin color, including non-human colors (yellow, mint, blue, etc.). Never translate to human Mediterranean tones.
+- Exact body / skin color at FULL SATURATION, including non-human colors (yellow, mint, blue, pink, gold, etc.). Never translate to human Mediterranean tones. NEVER desaturate or shift the body color toward grey / white / neutral — even when the mood is moody, noir, dark, dreamy, or low-key. The body color is preserved at full saturation regardless of scene lighting and regardless of the STYLE/Mood instruction below.
 - Character type (Default, Robot, Alien, etc.) and any species-specific features.
-- Hair color, length, style — exactly as shown.
+- Hair color, length, style — exactly as shown, at full saturation.
 - Eye style — open dots / closed curves / laser / X-eyes etc. as shown.
 - Mouth: ONE simple small Vibetown-style curved line if visible on the source; if the source has no mouth (e.g. bearded), keep no mouth.
 - All clothing pieces, in the same colors and configuration as the source.
@@ -138,7 +138,7 @@ WHAT TO PRESERVE FROM THE SOURCE
 WHAT TO CHANGE
 - Pose / body language → per SUBJECT ACTION below.
 - Environment / scene → per SCENE below and the scene reference image(s).
-- Lighting, color palette, atmosphere → per STYLE / Mood below.
+- ENVIRONMENT lighting, ENVIRONMENT color palette, atmosphere → per STYLE / Mood below. **STYLE / Mood applies to the environment and the ambient light wrapping the character — NOT to the character's intrinsic colors.** A noir mood = noir-lit environment + dramatic rim light landing on a fully-saturated character (yellow body stays yellow, mint body stays mint). The character's body / hair / clothing colors come ENTIRELY from the SOURCE-CHARACTER reference and do NOT shift based on mood.
 
 DO NOT ADD
 - Brand text (e.g. literal "GVC" letters) on clothing unless those exact letters are visibly present on the source character's clothing.
