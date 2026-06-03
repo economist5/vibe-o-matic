@@ -8,6 +8,7 @@ import {
   type GvcReference,
 } from "./vibeify-references";
 import { pickVibeParams } from "./vibeify-agent";
+import { getGvcTraitLock, type GvcTraitLock } from "./gvc-token-traits";
 
 export type VibeifySize = "1024x1024" | "1024x1536" | "1536x1024";
 
@@ -97,13 +98,40 @@ export function buildVibetownPromptForGvcSource(
   sceneBgFilenames: string[],
   scene: string,
   action: string,
-  mood: string
+  mood: string,
+  /**
+   * Optional trait lock pulled from /public/gvc-metadata.json for the
+   * specific GVC token id. When present, surfaces as a CHARACTER LOCK
+   * section right under the REFERENCE IMAGES block — text-level
+   * reinforcement of the visual reference (the model gets both the
+   * SOURCE-CHARACTER pixels AND a literal trait readout). Belt-and-
+   * suspenders for tokens whose canonical Type sits far from Flux's
+   * priors — e.g. "Grayscale", "Plastic Yellow", "Robot Cobalt" — so
+   * the model can't drift toward "ordinary vinyl figurine" defaults.
+   */
+  traits?: GvcTraitLock
 ) {
   const sceneText =
     scene.trim() ||
     "a calm, premium Vibetown setting that complements the uploaded subject";
   const actionText = action.trim();
   const moodText = mood.trim();
+
+  // CHARACTER LOCK section — only emitted when we have canonical traits.
+  // Each line restates one trait dimension as a HARD CONSTRAINT so the
+  // model has a literal-text anchor alongside the visual reference. The
+  // Type entry calls out the body-color discipline explicitly because
+  // that's the dimension that's drifted the most in observed renders.
+  const lockBlock = traits
+    ? `
+
+CHARACTER LOCK (read literally — these are the canonical GVC trait values for this exact token; match the SOURCE-CHARACTER reference AND these strings)
+- Type: "${traits.Type}" — this is the literal body-material specification. Render the body, face, hands, and any visible skin in the EXACT color and material implied by this Type label (e.g. "Plastic Yellow" = saturated plastic yellow body, "Grayscale" = neutral grey body with NO color tint at all, "Robot Cobalt" = metallic cobalt-blue robotic surfaces, "Gold" = metallic gold, "Rainbow" = rainbow gradient, "XRay" = x-ray skeletal look, "Unfinished Stone Sculpture" = rough grey stone). Do NOT add yellow/orange/pink tints to a Grayscale type. Do NOT desaturate a Plastic Yellow or Robot Pink type into a neutral grey. The Type IS the body color.
+- Face: "${traits.Face}" — describes the head's eyewear, expression, and face features. Match exactly.
+- Hair: "${traits.Hair}" — describes the head's hair and/or headwear. Match exactly.
+- Body: "${traits.Body}" — describes the clothing on the torso. Match exactly, including color.
+If anything below contradicts the SOURCE-CHARACTER reference image, the SOURCE-CHARACTER image wins — these strings are reinforcement, not override.`
+    : "";
 
   return `You are rendering a Good Vibes Club / Vibetown vinyl figurine into a new scene, pose, and mood. The source character is supplied directly as a reference image — preserve its identity exactly while restyling the scene, action, and lighting per the instructions below.
 
@@ -123,7 +151,7 @@ REFERENCE IMAGES (in priority order — image 1 is the DOMINANT anchor)
 ${sceneBgFilenames.map((n) => `  - ${n}`).join("\n")}
    Match the scene reference(s) for color palette, architecture, materials, props, lighting mood, time of day, and overall Vibetown aesthetic. Insert the source character naturally into this environment. You may adjust framing/camera distance to fit the action. Do NOT copy any characters that appear in the scene reference itself — the only character in the output is the SOURCE-CHARACTER above.`
       : ""
-  }
+  }${lockBlock}
 
 WHAT TO PRESERVE FROM THE SOURCE
 - Exact body / skin color at FULL SATURATION, including non-human colors (yellow, mint, blue, pink, gold, etc.). Never translate to human Mediterranean tones. NEVER desaturate or shift the body color toward grey / white / neutral — even when the mood is moody, noir, dark, dreamy, or low-key. The body color is preserved at full saturation regardless of scene lighting and regardless of the STYLE/Mood instruction below.
@@ -307,6 +335,18 @@ export async function generateVibetown(opts: {
    * (the source already defines the canonical GVC face).
    */
   sourceKind?: SourceKind;
+  /**
+   * Numeric GVC token id (0..6968) when the source was loaded via the
+   * token-ID picker. When set AND sourceKind === "gvc-token", we read
+   * the token's canonical traits from /public/gvc-metadata.json and
+   * inject them as a CHARACTER LOCK in the prompt — text-level
+   * reinforcement of the SOURCE-CHARACTER reference image (especially
+   * important for Type values like "Grayscale" / "Plastic Yellow" /
+   * "Robot Cobalt" that sit far from Flux's training-set priors).
+   * null when the user tagged an uploaded image as GVC (no token id
+   * known) or for photo sources — lock section is omitted.
+   */
+  sourceTokenId?: number | null;
   /** Extra fields to merge into the success response (e.g. testMode, paymentRail). */
   extra?: Record<string, unknown>;
 }): Promise<NextResponse> {
@@ -405,13 +445,33 @@ export async function generateVibetown(opts: {
           ...sceneBgs,
         ];
 
+  // Look up canonical traits for the LOCK section when we have a
+  // numeric token id. The lookup is server-side (metadata file in
+  // public/) so a caller can't spoof trait values — the only client
+  // input is the integer id, the rest comes from the canonical file.
+  let traitLock: GvcTraitLock | undefined;
+  if (sourceKind === "gvc-token" && typeof opts.sourceTokenId === "number") {
+    const lock = await getGvcTraitLock(opts.sourceTokenId);
+    if (lock) {
+      traitLock = lock;
+      console.log(
+        `[vibeify] character lock applied — tokenId=${opts.sourceTokenId} Type="${lock.Type}"`
+      );
+    } else {
+      console.log(
+        `[vibeify] no trait lock for tokenId=${opts.sourceTokenId} (missing/incomplete metadata)`
+      );
+    }
+  }
+
   const prompt =
     sourceKind === "gvc-token"
       ? buildVibetownPromptForGvcSource(
           sceneBgFilenames,
           opts.scene,
           opts.action,
-          opts.mood
+          opts.mood,
+          traitLock
         )
       : buildVibetownPrompt(
           description,
@@ -477,6 +537,22 @@ export function readVibeifyFields(form: FormData) {
 export function readSourceKind(form: FormData): SourceKind {
   const raw = (form.get("sourceKind") as string | null)?.trim().toLowerCase();
   return raw === "gvc-token" ? "gvc-token" : "photo";
+}
+
+/**
+ * Read the numeric GVC token id from the form. Returns null if absent
+ * or not a valid integer in [0, 6968]. Used by the render pipeline to
+ * key trait-lock lookups against /public/gvc-metadata.json.
+ *
+ * Note: the value is only meaningful when paired with
+ * sourceKind === "gvc-token". Callers should pass null otherwise.
+ */
+export function readSourceTokenId(form: FormData): number | null {
+  const raw = (form.get("sourceTokenId") as string | null)?.trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 6968) return null;
+  return n;
 }
 
 export type ResolvedVibeifyParams = {

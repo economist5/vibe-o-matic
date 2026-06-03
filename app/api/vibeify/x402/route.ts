@@ -24,6 +24,7 @@ import {
   generateVibetown,
   prepareImage,
   readSourceKind,
+  readSourceTokenId,
   resolveVibeifyParams,
 } from "@/lib/vibeify-render";
 import { checkCommunityEligibility } from "@/lib/community-eligibility";
@@ -210,6 +211,7 @@ export async function POST(req: NextRequest) {
       size: resolved.size,
       sceneBgFilenames: resolved.sceneBgFilenames,
       sourceKind: readSourceKind(form),
+      sourceTokenId: readSourceTokenId(form),
       extra: {
         paymentRail: "community-free",
         agentMode: form.get("agentMode") === "1",
@@ -317,6 +319,7 @@ export async function POST(req: NextRequest) {
     size: resolved.size,
     sceneBgFilenames: resolved.sceneBgFilenames,
     sourceKind: readSourceKind(form),
+    sourceTokenId: readSourceTokenId(form),
     extra: {
       paymentRail: "usdc",
       agentMode: form.get("agentMode") === "1",

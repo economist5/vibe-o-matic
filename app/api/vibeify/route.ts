@@ -20,6 +20,7 @@ import {
   generateVibetown,
   prepareImage,
   readSourceKind,
+  readSourceTokenId,
   resolveVibeifyParams,
 } from "@/lib/vibeify-render";
 
@@ -212,6 +213,7 @@ export async function POST(req: NextRequest) {
     size: resolved.size,
     sceneBgFilenames: resolved.sceneBgFilenames,
     sourceKind: readSourceKind(form),
+    sourceTokenId: readSourceTokenId(form),
     extra: {
       paymentRail: "vibestr",
       testMode: isTestMode,

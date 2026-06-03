@@ -583,6 +583,14 @@ export default function Home() {
     fd.set("mood", mood);
     fd.set("size", size);
     fd.set("sourceKind", sourceKind);
+    // When the source was loaded via the token-ID picker, send the
+    // numeric id so the server can look up canonical traits and inject
+    // a CHARACTER LOCK in the prompt. Null for photo sources OR for
+    // uploaded images that were user-tagged as GVC (no specific token
+    // id known).
+    if (sourceKind === "gvc-token" && sourceTokenId !== null) {
+      fd.set("sourceTokenId", String(sourceTokenId));
+    }
     if (sceneBgImages.length > 0) {
       fd.set("sceneBgImages", sceneBgImages.join(","));
     }
