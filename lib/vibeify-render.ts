@@ -107,16 +107,16 @@ export function buildVibetownPromptForGvcSource(
 
   return `You are rendering a Good Vibes Club / Vibetown vinyl figurine into a new scene, pose, and mood. The source character is supplied directly as a reference image — preserve its identity exactly while restyling the scene, action, and lighting per the instructions below.
 
-REFERENCE IMAGES
-1. GVC-STYLE-REFERENCE.png — body proportions template (shown as a T-pose from three angles purely for measurement; the T-pose stance is NOT a pose to copy — the character moves per SUBJECT ACTION).
-2. SOURCE-CHARACTER reference — the canonical GVC Citizen of Vibetown to render. This is the GROUND TRUTH for the subject's identity:
+REFERENCE IMAGES (in priority order — image 1 is the DOMINANT anchor)
+1. SOURCE-CHARACTER reference — the canonical GVC Citizen of Vibetown to render. This is the GROUND TRUTH for the subject's identity and the DOMINANT visual anchor for this render:
    - body / skin color (preserve EXACTLY — including saturated stylized colors like yellow, mint, pink, blue, gold; do NOT translate these to human skin tones)
    - character type (Default, Robot, Alien, etc.)
    - hair color, length, style
    - eye style (open dots, closed curves, laser, X-eyes, etc. — match the source)
    - all clothing and accessories (jacket, hat, glasses, jewelry, items in hand)
    - any patches, prints, logos, badges, or graphics visible on clothing
-   The source character may be shown in a neutral pose; the rendered output places that same character into the new scene + pose + mood described below.${
+   The source character may be shown in a neutral pose; the rendered output places that same character into the new scene + pose + mood described below.
+2. GVC-STYLE-REFERENCE.png — body proportions template (shown as a T-pose from three angles purely for measurement; the T-pose stance is NOT a pose to copy and its appearance is NOT the character — the character moves per SUBJECT ACTION and looks like SOURCE-CHARACTER above).${
     sceneBgFilenames.length > 0
       ? `
 3. Scene reference image(s) — canonical Vibetown environment for this render:
@@ -386,13 +386,24 @@ export async function generateVibetown(opts: {
   const sceneBgFilenames = sceneBgs.map((r) => r.filename);
 
   // Reference ordering matters — Flux input_image_1 is the strongest anchor.
-  // Photo path:      body T-pose, face refs, scene bgs
-  // GVC-token path:  body T-pose, SOURCE-CHARACTER, scene bgs
-  const allReferences = [
-    ...refs.refs,
-    ...(extraReference ? [extraReference] : []),
-    ...sceneBgs,
-  ];
+  // Photo path:      body T-pose, face refs, scene bgs (T-pose anchors
+  //                  proportions; identity comes from the describer text).
+  // GVC-token path:  SOURCE-CHARACTER, body T-pose, scene bgs (the NFT IS
+  //                  the identity, so it MUST sit at slot 1 — otherwise
+  //                  Flux anchors the characterless T-pose and invents the
+  //                  rest, especially when sceneBgs is empty (Freeform).
+  //                  The T-pose moves to slot 2 as a proportions-only ref.
+  const allReferences =
+    sourceKind === "gvc-token"
+      ? [
+          ...(extraReference ? [extraReference] : []),
+          ...refs.refs,
+          ...sceneBgs,
+        ]
+      : [
+          ...refs.refs,
+          ...sceneBgs,
+        ];
 
   const prompt =
     sourceKind === "gvc-token"
