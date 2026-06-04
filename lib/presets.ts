@@ -144,61 +144,71 @@ export type MoodPreset = {
   prompt: string;
 };
 
+// All mood prompts describe ENVIRONMENT/SCENE/LIGHTING ONLY — never
+// character body color, clothing color, skin, or material. The render
+// pipeline scopes mood to environment in buildVibetownPromptForGvcSource
+// (the "STYLE / Mood applies to the environment and the ambient light
+// wrapping the character" instruction), but redundant anchoring here
+// keeps Flux from drifting under its strong style priors. Palette refs
+// say "environment palette" / "scene palette"; rim-light language is
+// "edge glow wrapping the silhouette" so Flux applies the technique
+// without re-coloring the character itself.
 export const MOOD_PRESETS: MoodPreset[] = [
   {
     id: "joyful",
     emoji: "😊",
     label: "Joyful",
     prompt:
-      "warm joyful glow — golden-hour sunlight, soft skin highlights, warm amber and honey palette",
+      "warm joyful glow — golden-hour sunlight, warm amber and honey environment palette, soft bounce light across the scene surfaces",
   },
   {
     id: "chill",
     emoji: "😎",
     label: "Chill",
     prompt:
-      "cool and effortless overcast atmosphere — muted teal-and-blue palette, soft diffused overhead light, gentle shadows, low-key relaxed mood",
+      "cool and effortless overcast environment — muted teal-and-blue scene palette, soft diffused overhead light, gentle shadows, low-key relaxed atmosphere",
   },
   {
     id: "hyped",
     emoji: "🔥",
     label: "Hyped",
     prompt:
-      "hyped electric atmosphere — highly saturated neon palette of magenta, cyan, and electric red, sharp contrast, kinetic light streaks blurring across the background",
+      "hyped electric atmosphere — highly saturated neon environment palette of magenta, cyan, and electric red, sharp contrast, kinetic light streaks blurring across the background",
   },
   {
     id: "dreamy",
     emoji: "🌙",
     label: "Dreamy",
-    prompt: "dreamy and ethereal — soft moonlit calm with hazy bokeh",
+    prompt:
+      "dreamy and ethereal scene — soft moonlit calm in the environment with hazy bokeh in the background",
   },
   {
     id: "heroic",
     emoji: "💪",
     label: "Heroic",
     prompt:
-      "heroic cinematic atmosphere — low-angle framing, strong rim light from behind, deep saturated palette with warm key light and cool fill, slight contre-jour glow on the subjects' silhouettes",
+      "heroic cinematic atmosphere — low-angle framing, strong rim light from behind, deeply saturated environment palette with warm key light and cool fill, contre-jour edge glow wrapping the character's silhouette",
   },
   {
     id: "noir",
     emoji: "🕶️",
     label: "Noir",
     prompt:
-      "moody noir contrast — deep shadows, sharp rim light, dramatic side-lit mystery",
+      "moody noir environment lighting — deep shadows in the surrounding scene, sharp rim light along the character's silhouette edge, dramatic side-lit environmental mystery",
   },
   {
     id: "playful",
     emoji: "🎈",
     label: "Playful",
     prompt:
-      "whimsical and bouncy — bright pastel candy palette, soft diffused light, lighthearted energy",
+      "whimsical and bouncy scene atmosphere — bright pastel candy environment palette, soft diffused light, lighthearted energy in the surroundings",
   },
   {
     id: "retro",
     emoji: "📼",
     label: "Retro",
     prompt:
-      "nostalgic retro warmth — faded film tones, gentle grain, sun-bleached 70s palette",
+      "nostalgic retro environment grading — faded film tones in the image grade, gentle film grain across the frame, sun-bleached 70s environment palette",
   },
 ];
 
