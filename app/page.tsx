@@ -212,6 +212,13 @@ export default function Home() {
 
   // ── Test-mode bypass ─────────────────────────────────────
   const [bypassAvailable, setBypassAvailable] = useState(false);
+  /**
+   * True when server has VIBEIFY_OPEN_ACCESS=1 set — time-bound public
+   * promo (e.g. the GVC Day weekend). When on, the test-mode card drops
+   * the password input and shows an open-access banner; submit sends
+   * bypass=1 with no password (server accepts because OPEN_ACCESS).
+   */
+  const [openAccess, setOpenAccess] = useState(false);
   const [bypassMode, setBypassMode] = useState(false);
   // Test mode is server-gated by a password stored ONLY in the server's
   // VIBEIFY_BYPASS_PASSWORD env var — the client never knows the actual
@@ -250,7 +257,10 @@ export default function Home() {
     getStats().then(setStats).catch(() => {});
     fetch("/api/vibeify")
       .then((r) => r.json())
-      .then((d) => setBypassAvailable(!!d?.bypassAvailable))
+      .then((d) => {
+        setBypassAvailable(!!d?.bypassAvailable);
+        setOpenAccess(!!d?.openAccess);
+      })
       .catch(() => {});
   }, []);
 
@@ -597,7 +607,12 @@ export default function Home() {
 
     if (testMode) {
       fd.set("bypass", "1");
-      fd.set("bypassPassword", bypassPassword);
+      // In open-access mode, the server ignores the password (env-gated
+      // by VIBEIFY_OPEN_ACCESS). We still send the field for the normal
+      // password-gated path; harmless extra when open access is on.
+      if (!openAccess) {
+        fd.set("bypassPassword", bypassPassword);
+      }
     } else if (communityFree) {
       // FEEDBACK-V1.md community-free path — wallet field gets re-verified
       // server-side; no client trust on the eligibility decision.
@@ -977,6 +992,29 @@ export default function Home() {
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto">
+        {/* ── GVC Day Open Weekend banner ──────────────────
+            Only renders when the server has VIBEIFY_OPEN_ACCESS=1 set
+            (time-bound promo flag — flip off post-event to disappear).
+            Echoes the 6.9 GVC Day artwork; gold-on-dark with a soft
+            pulse to draw the eye without being shouty. */}
+        {openAccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 px-4 sm:px-6 py-3 rounded-2xl border border-gvc-gold/40 bg-gradient-to-r from-gvc-gold/15 via-gvc-gold/8 to-gvc-gold/15 flex items-center gap-3 sm:gap-4 flex-wrap"
+          >
+            <span className="font-display text-xl sm:text-2xl text-gvc-gold tracking-tight whitespace-nowrap">
+              🎉 GVC Day Open Weekend
+            </span>
+            <span className="font-body text-sm sm:text-base text-white/80">
+              Free renders for everyone through{" "}
+              <span className="text-gvc-gold font-semibold">6.9.26</span> — no
+              wallet, no password. Just turn on{" "}
+              <span className="text-gvc-gold">Test mode</span> and Vibeify.
+            </span>
+          </motion.div>
+        )}
+
         {/* ── Header ─────────────────────────────────────── */}
         <motion.header
           initial={{ opacity: 0, y: -10 }}
@@ -1747,54 +1785,72 @@ export default function Home() {
               </div>
             </Panel>
 
-            {/* Test-mode panel — server is always willing to serve test mode
-                (bypassAvailable is always true now), but only if the user POSTs
-                the right `bypassPassword`. The toggle stays disabled until
-                the typed password is non-empty client-side; the server
-                independently validates on POST and returns 403 if wrong. The
-                password lives ONLY in VIBEIFY_BYPASS_PASSWORD on the server
-                — the client never knows the actual value. */}
+            {/* Test-mode panel — two surfaces depending on server state.
+                Default: password-gated free renders for the team. The
+                toggle stays disabled until the typed password is non-empty
+                client-side; the server independently validates on POST
+                and returns 403 if wrong. The password lives ONLY in
+                VIBEIFY_BYPASS_PASSWORD on the server.
+                Open-access (VIBEIFY_OPEN_ACCESS=1 server-side): the
+                password input is dropped + a GVC-Day-themed banner takes
+                its place; toggle works without any input. Time-bound
+                public promo. Server enforces — client just adapts UX. */}
             {bypassAvailable && (
               <div
                 className={`px-3 py-2 rounded-xl border ${
                   testMode
                     ? "bg-pink-accent/10 border-pink-accent/40"
+                    : openAccess
+                    ? "bg-gvc-gold/10 border-gvc-gold/40"
                     : "bg-black/30 border-white/[0.08]"
                 }`}
               >
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-base">🧪</span>
+                    <span className="text-base">{openAccess ? "🎉" : "🧪"}</span>
                     <div className="min-w-0">
                       <p
                         className={`font-display text-sm ${
-                          testMode ? "text-pink-accent" : "text-white/70"
+                          testMode
+                            ? "text-pink-accent"
+                            : openAccess
+                            ? "text-gvc-gold"
+                            : "text-white/70"
                         }`}
                       >
-                        Test mode
+                        {openAccess
+                          ? "GVC Day Open Weekend"
+                          : "Test mode"}
                       </p>
-                      <p className="text-xs font-body text-white/40 truncate">
+                      <p className="text-xs font-body text-white/50 truncate">
                         {testMode
-                          ? "Free render — no payment. Disable for real renders."
+                          ? openAccess
+                            ? "Free render — happy GVC Day weekend!"
+                            : "Free render — no payment. Disable for real renders."
+                          : openAccess
+                          ? "Free renders all weekend — no password, no wallet"
                           : "Password-gated free renders for the team."}
                       </p>
                     </div>
                   </div>
                   <button
                     onClick={() => {
-                      // Client doesn't know the actual password — it just
-                      // requires SOMETHING to be typed. The server validates
-                      // on the actual render call and returns 403 if wrong;
-                      // the user sees that as a clear toast and can retry.
-                      if (bypassPassword.length > 0) {
+                      // Open access: toggle freely.
+                      // Password-gated: require SOMETHING typed (server
+                      // does the real validation on POST).
+                      if (openAccess || bypassPassword.length > 0) {
                         setBypassMode((v) => !v);
                       } else {
                         toast.error("Enter the test-mode password first");
                       }
                     }}
-                    disabled={bypassPassword.length === 0}
+                    disabled={!openAccess && bypassPassword.length === 0}
                     className={`shrink-0 relative w-10 h-5 rounded-full transition-colors disabled:opacity-30 disabled:cursor-not-allowed ${
-                      testMode ? "bg-pink-accent" : "bg-gvc-gray"
+                      testMode
+                        ? "bg-pink-accent"
+                        : openAccess
+                        ? "bg-gvc-gold/70"
+                        : "bg-gvc-gray"
                     }`}
                     aria-label="Toggle test mode"
                   >
@@ -1805,9 +1861,10 @@ export default function Home() {
                     />
                   </button>
                 </div>
-                {/* Password input — required to unlock the toggle. Hidden text
-                    so a demo audience can't read it over your shoulder. */}
-                {!testMode && (
+                {/* Password input — required to unlock the toggle UNLESS
+                    open-access is on (in which case the toggle is the only
+                    affordance needed). */}
+                {!testMode && !openAccess && (
                   <input
                     type="password"
                     value={bypassPassword}

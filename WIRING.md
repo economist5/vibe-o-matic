@@ -86,6 +86,7 @@ After those swaps, the production deploy is fully yours: every dollar of every r
 | `KV_REST_API_URL` + `KV_REST_API_TOKEN` (or `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN`) | `lib/free-render-counter.ts` (atomic counter) | Upstash Redis (Vercel Storage marketplace) | Auto-injected on store connect | Backs the 200-render community-free counter. Either naming scheme works. Free tier covers our volume. UNSET → community-free path returns 503; paid + test paths unaffected. |
 | `BLOB_READ_WRITE_TOKEN` | `app/api/training-set/submit/route.ts` | Vercel Blob | Auto-injected on store connect | Training-dataset storage. Store configured PRIVATE (correct privacy posture). UNSET → contribution upload returns 503; render flow keeps working. |
 | `VIBEIFY_ADMIN_TOKEN` | `app/api/admin/refill/route.ts` | None (server-side string match) | Yes — pick any random ≥32-char string | Gates the counter-refill endpoint. Used by whoever holds the keys to top up the community-free pool when the X-reload ping mechanic surfaces. UNSET → admin endpoint returns 503; counter still works but can only be edited via Vercel KV dashboard. |
+| `VIBEIFY_OPEN_ACCESS` | `app/api/vibeify/route.ts` | None (server-side flag) | Yes — set to `1` to open, unset / `0` to close | Time-bound public-promo escape hatch. When `"1"`, test-mode bypass works without password — anyone can render free. UI auto-adapts (banner + dropped password input). Flip via Vercel env vars + redeploy. Used for GVC Day weekend + similar events. |
 
 ### Wallets
 

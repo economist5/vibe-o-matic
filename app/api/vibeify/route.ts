@@ -129,11 +129,20 @@ export async function POST(req: NextRequest) {
   // means a fork of this repo with no env config has test mode fully
   // disabled by default. Server is the sole source of truth — the
   // client only sends whatever the user typed.
+  //
+  // VIBEIFY_OPEN_ACCESS=1 escape hatch — used for time-bound public
+  // promos (e.g. GVC Day weekend). When set, bypass=1 is accepted
+  // WITHOUT a password match. Surfaced to the client via the GET
+  // handler so the UI can swap the password input for an open-access
+  // banner. Flip to 0 / unset to return to password-gated test mode.
   const TEST_PASSWORD = process.env.VIBEIFY_BYPASS_PASSWORD;
+  const OPEN_ACCESS = process.env.VIBEIFY_OPEN_ACCESS === "1";
   const bypassRequested = form.get("bypass") === "1";
   const bypassPassword = (form.get("bypassPassword") as string | null) || "";
   const isTestMode =
-    bypassRequested && !!TEST_PASSWORD && bypassPassword === TEST_PASSWORD;
+    bypassRequested &&
+    (OPEN_ACCESS ||
+      (!!TEST_PASSWORD && bypassPassword === TEST_PASSWORD));
 
   if (bypassRequested && !isTestMode) {
     return NextResponse.json(
@@ -234,5 +243,9 @@ export async function GET() {
     // Test mode is always available, but gated by a password the client
     // must POST in the `bypassPassword` form field. See route POST handler.
     bypassAvailable: true,
+    // True when VIBEIFY_OPEN_ACCESS=1 is set server-side — clients use
+    // this to flip the test-mode card into "open access" UX (no password
+    // input, banner instead). Time-bound public promo flag.
+    openAccess: process.env.VIBEIFY_OPEN_ACCESS === "1",
   });
 }
